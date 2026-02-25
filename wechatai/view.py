@@ -40,7 +40,6 @@ def get_connection(max_retries=3):
 def get_data():
     try:
         conn = get_connection()
-        # 明确指定列名，确保 id 是整数
         df = pd.read_sql("""
                          SELECT id,
                                 category,
@@ -52,7 +51,6 @@ def get_data():
                          ORDER BY publish_date DESC
                          """, conn)
         conn.close()
-        # 确保 id 是整数类型
         df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
         return df
     except Exception as e:
@@ -63,7 +61,6 @@ def get_data():
 # 更新分类
 def update_category(article_id, new_category):
     try:
-        # 确保 article_id 是整数
         article_id = int(float(article_id))
         conn = get_connection()
         with conn.cursor() as cursor:
@@ -71,7 +68,6 @@ def update_category(article_id, new_category):
             cursor.execute(sql, (new_category, article_id))
         conn.commit()
         conn.close()
-        # 清除缓存，强制刷新数据
         get_data.clear()
         return True
     except Exception as e:
@@ -85,7 +81,6 @@ CATEGORIES = ["技术研发与突破", "政策法规与市场交易", "工程项
 
 df = get_data()
 
-# 空数据保护
 if df.empty:
     st.warning("数据库中没有数据，请先添加文章数据")
     st.stop()
@@ -93,10 +88,6 @@ if df.empty:
 if 'category' not in df.columns:
     st.error(f"数据表结构不正确，缺少 category 列。当前列: {list(df.columns)}")
     st.stop()
-
-# 调试信息（看看 id 列的实际值）
-# st.write("调试 - ID列类型:", df['id'].dtype)
-# st.write("调试 - ID列前5行:", df['id'].head())
 
 # 侧边栏筛选
 st.sidebar.header("筛选选项")
@@ -113,8 +104,11 @@ st.sidebar.markdown("---")
 st.sidebar.write(f"**总计文章数:** {len(df)}")
 st.sidebar.write(f"**筛选后文章数:** {len(filtered_df)}")
 
-# 文章展示区域
-for i, row in filtered_df.iterrows():
+# 文章展示区域 - 使用 enumerate 确保唯一 key
+for idx, row in filtered_df.iterrows():
+    # 使用 idx（行索引）+ id 确保 key 唯一
+    unique_key = f"{idx}_{int(row['id'])}"
+
     with st.container():
         st.markdown(f"### {row['title']}")
         st.caption(f"📅 {row['publish_date']} | 🏷️ {row['category']}")
@@ -130,12 +124,11 @@ for i, row in filtered_df.iterrows():
                     "修改分类:",
                     options=CATEGORIES,
                     index=CATEGORIES.index(row['category']) if row['category'] in CATEGORIES else 0,
-                    key=f"select_{int(row['id'])}"
+                    key=f"select_{unique_key}"  # 使用唯一 key
                 )
 
             with col2:
-                # 确保 button 的 key 也是整数
-                if st.button("更新", key=f"update_{int(row['id'])}"):
+                if st.button("更新", key=f"update_{unique_key}"):  # 使用唯一 key
                     if new_category != row['category']:
                         if update_category(row['id'], new_category):
                             st.success("分类更新成功！")
