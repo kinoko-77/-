@@ -1,0 +1,4 @@
+   streamlit==1.29.0
+   pymysql==1.1.0
+   pandas==2.1.0
+   
