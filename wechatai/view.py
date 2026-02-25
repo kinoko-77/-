@@ -7,14 +7,28 @@ st.title("⚡ 储能行业公众号 AI 自动简报")
 
 # 数据库连接函数
 def get_connection():
-    return pymysql.connect(host='127.0.0.1', user='root', password='2413462600mq.', database='wechat_rss', charset='utf8mb4')
+    return pymysql.connect(
+        host='gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
+        port=4000,
+        user='4UQMmu8pBXHpYPX.root',
+        password='ErrvTvIZ1l1WdQ90',
+        database='test',  # 默认数据库，后面可以改
+        charset='utf8mb4',
+        ssl={'ca': '/etc/ssl/cert.pem'},  # Streamlit Cloud 系统证书路径
+        cursorclass=pymysql.cursors.DictCursor
+    )
 
 # 获取数据
 def get_data():
-    conn = get_connection()
-    df = pd.read_sql("SELECT id, category, title, summary, publish_date, link FROM articles ORDER BY publish_date DESC", conn)
-    conn.close()
-    return df
+    try:
+        conn = get_connection()
+        # 先测试连接，看看有哪些表
+        df = pd.read_sql("SHOW TABLES", conn)
+        conn.close()
+        return df
+    except Exception as e:
+        st.error(f"Database connection failed: {e}")
+        return pd.DataFrame()
 
 # 更新分类
 def update_category(article_id, new_category):
