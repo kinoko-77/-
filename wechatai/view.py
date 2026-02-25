@@ -15,7 +15,7 @@ def get_connection():
         password='ErrvTvIZ1l1WdQ90',
         database='test',
         charset='utf8mb4',
-        ssl={'ca': '/etc/ssl/cert.pem'},
+        ssl={'ssl': True},
         cursorclass=pymysql.cursors.DictCursor
     )
 
