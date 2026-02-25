@@ -40,22 +40,35 @@ def get_connection(max_retries=3):
 def get_data():
     try:
         conn = get_connection()
-        df = pd.read_sql("SELECT * FROM articles ORDER BY publish_date DESC", conn)
+        # 明确指定列名，确保 id 是整数
+        df = pd.read_sql("""
+                         SELECT id,
+                                category,
+                                title,
+                                summary,
+                                publish_date,
+                                link
+                         FROM articles
+                         ORDER BY publish_date DESC
+                         """, conn)
         conn.close()
-        df['id'] = df['id'].astype(int)
+        # 确保 id 是整数类型
+        df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
         return df
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         return pd.DataFrame()
 
 
-# 更新分类（修复整数类型问题）
+# 更新分类
 def update_category(article_id, new_category):
     try:
+        # 确保 article_id 是整数
+        article_id = int(float(article_id))
         conn = get_connection()
         with conn.cursor() as cursor:
             sql = "UPDATE articles SET category = %s WHERE id = %s"
-            cursor.execute(sql, (new_category, int(article_id)))
+            cursor.execute(sql, (new_category, article_id))
         conn.commit()
         conn.close()
         # 清除缓存，强制刷新数据
@@ -80,6 +93,10 @@ if df.empty:
 if 'category' not in df.columns:
     st.error(f"数据表结构不正确，缺少 category 列。当前列: {list(df.columns)}")
     st.stop()
+
+# 调试信息（看看 id 列的实际值）
+# st.write("调试 - ID列类型:", df['id'].dtype)
+# st.write("调试 - ID列前5行:", df['id'].head())
 
 # 侧边栏筛选
 st.sidebar.header("筛选选项")
@@ -113,11 +130,12 @@ for i, row in filtered_df.iterrows():
                     "修改分类:",
                     options=CATEGORIES,
                     index=CATEGORIES.index(row['category']) if row['category'] in CATEGORIES else 0,
-                    key=f"select_{row['id']}"
+                    key=f"select_{int(row['id'])}"
                 )
 
             with col2:
-                if st.button("更新", key=f"update_{row['id']}"):
+                # 确保 button 的 key 也是整数
+                if st.button("更新", key=f"update_{int(row['id'])}"):
                     if new_category != row['category']:
                         if update_category(row['id'], new_category):
                             st.success("分类更新成功！")
@@ -128,6 +146,6 @@ for i, row in filtered_df.iterrows():
                         st.info("分类未改变")
 
             with col3:
-                st.caption(f"ID: {row['id']}")
+                st.caption(f"ID: {int(row['id'])}")
 
         st.divider()
