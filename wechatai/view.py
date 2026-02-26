@@ -3,6 +3,9 @@ import pymysql
 import pandas as pd
 import time
 
+# 强制清除缓存（部署时只运行一次）
+st.cache_data.clear()
+
 st.set_page_config(page_title="储能内参 AI 版", layout="wide")
 st.title("⚡ 储能行业公众号 AI 自动简报")
 
