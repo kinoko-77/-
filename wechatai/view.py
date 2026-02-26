@@ -43,25 +43,33 @@ def get_connection(max_retries=3):
 def get_data():
     try:
         conn = get_connection()
-        df = pd.read_sql("""
-                         SELECT id,
-                                category,
-                                title,
-                                summary,
-                                publish_date,
-                                link
-                         FROM articles
-                         ORDER BY publish_date DESC
-                         """, conn)
+
+        # 使用字典游标，手动读取数据
+        with conn.cursor() as cursor:
+            cursor.execute("""
+                           SELECT id, category, title, summary, publish_date, link
+                           FROM articles
+                           ORDER BY publish_date DESC
+                           """)
+            rows = cursor.fetchall()
+
         conn.close()
+
+        # 手动创建 DataFrame
+        if rows:
+            df = pd.DataFrame(rows, columns=['id', 'category', 'title', 'summary', 'publish_date', 'link'])
+        else:
+            df = pd.DataFrame(columns=['id', 'category', 'title', 'summary', 'publish_date', 'link'])
+
+        # 转换类型
         df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
 
-        # 调试信息
+        # 调试
         st.write("调试 - 数据行数:", len(df))
-        st.write("调试 - 列名:", list(df.columns))
-        st.write("调试 - 前3行数据:", df.head(3))
+        st.write("调试 - 第一行:", df.iloc[0].to_dict() if not df.empty else "空")
 
         return df
+
     except Exception as e:
         st.error(f"Database connection failed: {e}")
         return pd.DataFrame()
