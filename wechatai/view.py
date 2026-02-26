@@ -55,6 +55,12 @@ def get_data():
                          """, conn)
         conn.close()
         df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
+
+        # 调试信息
+        st.write("调试 - 数据行数:", len(df))
+        st.write("调试 - 列名:", list(df.columns))
+        st.write("调试 - 前3行数据:", df.head(3))
+
         return df
     except Exception as e:
         st.error(f"Database connection failed: {e}")
