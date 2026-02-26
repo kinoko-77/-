@@ -3,13 +3,11 @@ import pymysql
 import pandas as pd
 import time
 
-# 强制清除缓存（部署时只运行一次）
-st.cache_data.clear()
 
 st.set_page_config(page_title="储能内参 AI 版", layout="wide")
-st.title("⚡ 储能行业公众号 AI 自动简报")
 
-# 数据库配置
+
+# ========== 数据库配置 ==========
 DB_CONFIG = {
     'host': 'gateway01.ap-southeast-1.prod.aws.tidbcloud.com',
     'port': 4000,
@@ -19,32 +17,33 @@ DB_CONFIG = {
     'charset': 'utf8mb4',
     'ssl': {'ssl': True},
     'cursorclass': pymysql.cursors.DictCursor,
-    'connect_timeout': 10,
+    'connect_timeout': 30,  # 给足冷启动时间
     'read_timeout': 30,
     'write_timeout': 30
 }
 
 
-# 带重试的数据库连接
+# ========== 数据库连接函数 ==========
 def get_connection(max_retries=3):
+    """带重试的连接，给 TiDB 冷启动时间"""
     for i in range(max_retries):
         try:
             conn = pymysql.connect(**DB_CONFIG)
             return conn
         except Exception as e:
             if i < max_retries - 1:
-                time.sleep(1)
+                time.sleep(3)  # 等待 3 秒让数据库唤醒
                 continue
             raise e
 
 
-# 获取数据（带缓存）
-@st.cache_data(ttl=300)
+# ========== 获取数据（带缓存）==========
+@st.cache_data(ttl=600)  # 10 分钟缓存
 def get_data():
     try:
-        conn = get_connection()
+        with st.spinner('🔄 正在连接数据库...'):
+            conn = get_connection()
 
-        # 使用字典游标，手动读取数据
         with conn.cursor() as cursor:
             cursor.execute("""
                            SELECT id, category, title, summary, publish_date, link
@@ -55,33 +54,32 @@ def get_data():
 
         conn.close()
 
-        # 手动创建 DataFrame
         if rows:
-            df = pd.DataFrame(rows, columns=['id', 'category', 'title', 'summary', 'publish_date', 'link'])
-        else:
-            df = pd.DataFrame(columns=['id', 'category', 'title', 'summary', 'publish_date', 'link'])
-
-        # 转换类型
-        df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
-
-
-        return df
+            df = pd.DataFrame(rows)
+            df['id'] = pd.to_numeric(df['id'], errors='coerce').fillna(0).astype(int)
+            return df
+        return pd.DataFrame(columns=['id', 'category', 'title', 'summary', 'publish_date', 'link'])
 
     except Exception as e:
-        st.error(f"Database connection failed: {e}")
+        st.error(f"❌ 数据库连接失败: {e}")
+        st.info("💡 TiDB 免费版可能需要 3-5 秒冷启动，请刷新页面重试")
         return pd.DataFrame()
 
 
-# 更新分类
+# ========== 更新分类 ==========
 def update_category(article_id, new_category):
     try:
         article_id = int(float(article_id))
-        conn = get_connection()
-        with conn.cursor() as cursor:
-            sql = "UPDATE articles SET category = %s WHERE id = %s"
-            cursor.execute(sql, (new_category, article_id))
-        conn.commit()
-        conn.close()
+
+        with st.spinner('🔄 正在更新...'):
+            conn = get_connection()
+            with conn.cursor() as cursor:
+                sql = "UPDATE articles SET category = %s WHERE id = %s"
+                cursor.execute(sql, (new_category, article_id))
+            conn.commit()
+            conn.close()
+
+        # 清除缓存，强制刷新数据
         get_data.clear()
         return True
     except Exception as e:
@@ -89,18 +87,29 @@ def update_category(article_id, new_category):
         return False
 
 
-# 分类选项
-CATEGORIES = ["技术研发与突破", "政策法规与市场交易", "工程项目与并网实践", "企业动向与产业经济", "基础知识与科普解读",
-              "安全事件与事故处理", "其他"]
+# ========== 页面内容 ==========
+st.title("⚡ 储能行业公众号 AI 自动简报")
 
+# 手动刷新按钮
+col1, col2 = st.columns([1, 4])
+with col1:
+    if st.button("🔄 刷新数据"):
+        st.cache_data.clear()
+        st.rerun()
+
+with col2:
+    st.caption("💡 如果数据未更新，请点击刷新按钮")
+
+# 分类选项
+CATEGORIES = ["技术研发与突破", "政策法规与市场交易", "工程项目与并网实践",
+              "企业动向与产业经济", "基础知识与科普解读", "安全事件与事故处理", "其他"]
+
+# 获取数据
 df = get_data()
 
+# 空数据保护
 if df.empty:
-    st.warning("数据库中没有数据，请先添加文章数据")
-    st.stop()
-
-if 'category' not in df.columns:
-    st.error(f"数据表结构不正确，缺少 category 列。当前列: {list(df.columns)}")
+    st.warning("⚠️ 数据库中没有数据，请检查连接或刷新页面")
     st.stop()
 
 # 侧边栏筛选
@@ -110,17 +119,14 @@ selected_cat = st.sidebar.multiselect("选择分类", options=df['category'].uni
 # 手动修改开关
 enable_edit = st.sidebar.checkbox("启用手动修改分类")
 
-# 页面展示
+# 统计信息
 filtered_df = df[df['category'].isin(selected_cat)]
-
-# 显示统计信息
 st.sidebar.markdown("---")
 st.sidebar.write(f"**总计文章数:** {len(df)}")
 st.sidebar.write(f"**筛选后文章数:** {len(filtered_df)}")
 
-# 文章展示区域 - 使用 enumerate 确保唯一 key
-for idx, row in filtered_df.iterrows():
-    # 使用 idx（行索引）+ id 确保 key 唯一
+# 文章展示
+for idx, (_, row) in enumerate(filtered_df.iterrows()):
     unique_key = f"{idx}_{int(row['id'])}"
 
     with st.container():
@@ -138,17 +144,17 @@ for idx, row in filtered_df.iterrows():
                     "修改分类:",
                     options=CATEGORIES,
                     index=CATEGORIES.index(row['category']) if row['category'] in CATEGORIES else 0,
-                    key=f"select_{unique_key}"  # 使用唯一 key
+                    key=f"select_{unique_key}"
                 )
 
             with col2:
-                if st.button("更新", key=f"update_{unique_key}"):  # 使用唯一 key
+                if st.button("更新", key=f"update_{unique_key}"):
                     if new_category != row['category']:
                         if update_category(row['id'], new_category):
-                            st.success("分类更新成功！")
+                            st.success("✅ 分类更新成功！")
                             st.rerun()
                         else:
-                            st.error("更新失败！")
+                            st.error("❌ 更新失败！")
                     else:
                         st.info("分类未改变")
 
