@@ -39,7 +39,7 @@ def get_connection(max_retries=3):
 
 
 # 获取数据（带缓存）
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=300)
 def get_data():
     try:
         conn = get_connection()
